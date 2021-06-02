@@ -15,7 +15,9 @@
 #define _XOPEN_SOURCE 700
 
 /* For get_current_dir_name */
-#define _GNU_SOURCE
+#ifndef _GNU_SOURCE
+#   define _GNU_SOURCE
+#endif
 
 #include <errno.h>
 #include <stdio.h>
@@ -33,6 +35,8 @@
 #include "passthrough.h"
 
 #include "binary_storage.h"
+
+struct xattrs_config xattrs_config;
 
 static int xmp_setxattr(const char *path, const char *name, const char *value, size_t size, int flags)
 {
@@ -153,6 +157,7 @@ static struct fuse_operations xmp_oper = {
         .utimens     = xmp_utimens,
 #endif
         .open        = xmp_open,
+        .create      = xmp_create,
         .read        = xmp_read,
         .write       = xmp_write,
         .statfs      = xmp_statfs,
