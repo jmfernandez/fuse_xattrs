@@ -17,7 +17,11 @@
 #include "utils.h"
 #include "fuse_xattrs_config.h"
 
-#include <attr/xattr.h>
+#include <sys/xattr.h>
+
+#ifndef ENOATTR
+#	define ENOATTR ENODATA
+#endif	/* ENOATTR */
 
 struct on_memory_attr {
     u_int16_t name_size;
@@ -101,10 +105,10 @@ char *__read_file(const char *path, int *buffer_size)
     }
 
     memset(buffer, '\0', _buffer_size);
-    fread(buffer, 1, _buffer_size, file);
+    size_t _was_read = fread(buffer, 1, _buffer_size, file);
     fclose(file);
 
-    return buffer;
+    return _was_read != 0 ? buffer : NULL;
 }
 
 char *__read_file_sidecar(const char *path, int *buffer_size)
@@ -197,7 +201,7 @@ int __write_to_file(FILE *file, const char *name, const char *value, const size_
 
 #ifdef DEBUG
     char *sanitized_value = sanitize_value(value, value_size);
-    debug_print("name='%s' name_size=%zu sanitized_value='%s' value_size=%zu\n", name, name_size, sanitized_value, value_size);
+    debug_print("name='%s' name_size=%zu sanitized_value='%s' value_size=%zu\n", name, (size_t)name_size, sanitized_value, value_size);
     free(sanitized_value);
 #endif
 
