@@ -1,3 +1,15 @@
+# Fork of [fbarriga/fuse_xattrs](https://github.com/fbarriga/fuse_xattrs)
+
+This fork was created in order to add the needed fixes to get this FUSE
+filesystem ready to hold the Singularity temporary sandboxes directory,
+which is set up through the `SINGULARITY_TMPDIR` environment variable.
+These sandboxes are used both on pull from Docker, when the `.sif` image
+is assembled, and in some execution scenarios (like using `--userns` flag).
+
+This fork contains both original fixes and other ones gathered from [fuse_xattrs forks](https://github.com/fbarriga/fuse_xattrs/network/members).
+
+## Original README
+
 [![Build Status](https://travis-ci.org/fbarriga/fuse_xattrs.svg?branch=master)](https://travis-ci.org/fbarriga/fuse_xattrs)
 
 ## Abstract
