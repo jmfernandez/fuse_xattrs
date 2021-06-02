@@ -11,6 +11,35 @@ set(XATTR_NAME_MAX 255)               # chars in an extended attribute name
 set(XATTR_SIZE_MAX 65536)             # size of an extended attribute value (64k)
 set(XATTR_LIST_MAX 65536)             # size of extended attribute namelist (64k)
 
+# Check xattr headers
+include (CheckIncludeFile)
+check_include_file (sys/xattr.h HAVE_SYS_XATTR_H)
+if(NOT HAVE_SYS_XATTR_H)
+    message(FATAL_ERROR "sys/xattr.h not found")
+endif()
+
+include (CheckCSourceCompiles)
+check_c_source_compiles ("
+  #include <sys/types.h>
+  #include <sys/xattr.h>
+  int main() { return 1; }
+  " HAVE_ATTR_XATTR_H)
+if(NOT HAVE_ATTR_XATTR_H)
+    message(FATAL_ERROR "sys/xattr.h not found")
+endif()
+
+check_c_source_compiles ("
+  #define _ATFILE_SOURCE 1
+  #define _GNU_SOURCE 1
+  #include <fcntl.h>
+  #include <sys/stat.h>
+  int main() { return utimensat == utimensat; }
+  " HAVE_UTIMENSAT)
+if(HAVE_UTIMENSAT)
+    add_definitions (-D_ATFILE_SOURCE=1)
+    add_definitions (-D_GNU_SOURCE=1)
+endif()
+
 configure_file (
         "${PROJECT_SOURCE_DIR}/fuse_xattrs_config.h.in"
         "${PROJECT_BINARY_DIR}/fuse_xattrs_config.h"
@@ -24,22 +53,6 @@ configure_file (
         "${PROJECT_BINARY_DIR}/fuse_xattrs.1"
 )
 
-# Check xattr headers
-include (CheckIncludeFile)
-check_include_file (sys/xattr.h HAVE_SYS_XATTR_H)
-if(NOT HAVE_SYS_XATTR_H)
-    message(FATAL_ERROR "sys/xattr.h not found")
-endif()
-
-include (CheckCSourceCompiles)
-check_c_source_compiles ("
-  #include <sys/types.h>
-  #include <attr/xattr.h>
-  int main() { return 1; }
-  " HAVE_ATTR_XATTR_H)
-if(NOT HAVE_ATTR_XATTR_H)
-    message(FATAL_ERROR "attr/xattr.h not found")
-endif()
 
 # set required definitions
 add_definitions (-D_FILE_OFFSET_BITS=64)
