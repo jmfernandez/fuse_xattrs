@@ -1,10 +1,14 @@
 # Fork of [fbarriga/fuse_xattrs](https://github.com/fbarriga/fuse_xattrs)
 
-This fork was created in order to add the needed fixes to get this FUSE
+This fork was created in order to:
+
+* Migrate to libfuse3, and adding needed changes to allow `fuse_xattrs` to be used with singularity through _`--fusemount`_ parameter (since version 0.5).
+
+* Add the needed fixes to get this FUSE
 filesystem ready to hold the Singularity temporary sandboxes directory,
 which is set up through the `SINGULARITY_TMPDIR` environment variable.
 These sandboxes are used both on pull from Docker, when the `.sif` image
-is assembled, and in some execution scenarios (like using `--userns` flag).
+is assembled, and in some execution scenarios (like using `--userns` flag) (since version 0.4).
 
 This fork contains both original fixes and other ones gathered from [fuse_xattrs forks](https://github.com/fbarriga/fuse_xattrs/network/members).
 

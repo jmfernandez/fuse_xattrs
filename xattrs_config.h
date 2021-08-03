@@ -13,10 +13,16 @@
 #include <sys/types.h>
 
 struct xattrs_config {
-    const int show_sidecar;
-    const char *source_dir;
+    int show_sidecar;
+    const char * source_dir;
     size_t source_dir_size;
-
+    char * mountpoint;
+    int show_version;
+    int show_help;
+    int foreground;
+    int singlethread;
+    int debug;
+    int verbose;
 };
 extern struct xattrs_config xattrs_config;
 

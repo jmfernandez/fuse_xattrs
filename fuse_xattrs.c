@@ -26,7 +26,10 @@
 #include <stddef.h>
 
 #include <fuse.h>
-#include <sys/xattr.h>
+#include <fuse_opt.h>
+#if !defined(__CYGWIN__)
+#  include <fuse_lowlevel.h>
+#endif
 
 #include "fuse_xattrs_config.h"
 
@@ -34,143 +37,23 @@
 #include "utils.h"
 #include "passthrough.h"
 
-#include "binary_storage.h"
+# ifdef HAVE_ERROR_H
+#  include <error.h>
+# else
+#  define error(status, errno, fmt, ...) do {                           \
+    if (errno == 0)                                                     \
+      fprintf (stderr, "fuse-overlayfs: " fmt "\n", ##__VA_ARGS__);     \
+    else                                                                \
+      {                                                                 \
+        fprintf (stderr, "fuse-overlayfs: " fmt, ##__VA_ARGS__);        \
+        fprintf (stderr, ": %s\n", strerror (errno));                   \
+      }                                                                 \
+    if (status)                                                         \
+      exit (status);                                                    \
+  } while(0)
+# endif
 
 struct xattrs_config xattrs_config;
-
-static int xmp_setxattr(const char *path, const char *name, const char *value, size_t size, int flags)
-{
-    if (xattrs_config.show_sidecar == 0 && filename_is_sidecar(path) == 1)  {
-        return -ENOENT;
-    }
-
-    if (get_namespace(name) != USER) {
-        debug_print("Only user namespace is supported. name=%s\n", name);
-        return -ENOTSUP;
-    }
-    if (strlen(name) > XATTR_NAME_MAX) {
-        debug_print("attribute name must be equal or smaller than %d bytes\n", XATTR_NAME_MAX);
-        return -ERANGE;
-    }
-    if (size > XATTR_SIZE_MAX) {
-        debug_print("attribute value cannot be bigger than %d bytes\n", XATTR_SIZE_MAX);
-        return -ENOSPC;
-    }
-
-    char *_path = prepend_source_directory(path);
-
-#ifdef DEBUG
-    char *sanitized_value = sanitize_value(value, size);
-    debug_print("path=%s name=%s value=%s size=%zu XATTR_CREATE=%d XATTR_REPLACE=%d\n",
-                _path, name, sanitized_value, size, flags & XATTR_CREATE, flags & XATTR_REPLACE);
-
-    free(sanitized_value);
-#endif
-
-    int rtval = binary_storage_write_key(_path, name, value, size, flags);
-    free(_path);
-
-    return rtval;
-}
-
-static int xmp_getxattr(const char *path, const char *name, char *value, size_t size)
-{
-    if (xattrs_config.show_sidecar == 0 && filename_is_sidecar(path) == 1)  {
-        return -ENOENT;
-    }
-
-    if (get_namespace(name) != USER) {
-        debug_print("Only user namespace is supported. name=%s\n", name);
-        return -ENOTSUP;
-    }
-    if (strlen(name) > XATTR_NAME_MAX) {
-        debug_print("attribute name must be equal or smaller than %d bytes\n", XATTR_NAME_MAX);
-        return -ERANGE;
-    }
-
-    char *_path = prepend_source_directory(path);
-    debug_print("path=%s name=%s size=%zu\n", _path, name, size);
-    int rtval = binary_storage_read_key(_path, name, value, size);
-    free(_path);
-
-    return rtval;
-}
-
-static int xmp_listxattr(const char *path, char *list, size_t size)
-{
-    if (xattrs_config.show_sidecar == 0 && filename_is_sidecar(path) == 1)  {
-        return -ENOENT;
-    }
-
-    if (size > XATTR_LIST_MAX) {
-        debug_print("The size of the list of attribute names for this file exceeds the system-imposed limit.\n");
-        return -E2BIG;
-    }
-
-    char *_path = prepend_source_directory(path);
-    debug_print("path=%s size=%zu\n", _path, size);
-    int rtval = binary_storage_list_keys(_path, list, size);
-    free(_path);
-
-    return rtval;
-}
-
-static int xmp_removexattr(const char *path, const char *name)
-{
-    if (xattrs_config.show_sidecar == 0 && filename_is_sidecar(path) == 1)  {
-        return -ENOENT;
-    }
-
-    if (get_namespace(name) != USER) {
-        debug_print("Only user namespace is supported. name=%s\n", name);
-        return -ENOTSUP;
-    }
-    if (strlen(name) > XATTR_NAME_MAX) {
-        debug_print("attribute name must be equal or smaller than %d bytes\n", XATTR_NAME_MAX);
-        return -ERANGE;
-    }
-
-    char *_path = prepend_source_directory(path);
-    debug_print("path=%s name=%s\n", _path, name);
-    int rtval = binary_storage_remove_key(_path, name);
-    free(_path);
-
-    return rtval;
-}
-
-static struct fuse_operations xmp_oper = {
-        .getattr     = xmp_getattr,
-        .access      = xmp_access,
-        .readlink    = xmp_readlink,
-        .readdir     = xmp_readdir,
-        .mknod       = xmp_mknod,
-        .mkdir       = xmp_mkdir,
-        .symlink     = xmp_symlink,
-        .unlink      = xmp_unlink,
-        .rmdir       = xmp_rmdir,
-        .rename      = xmp_rename,
-        .link        = xmp_link,
-        .chmod       = xmp_chmod,
-        .chown       = xmp_chown,
-        .truncate    = xmp_truncate,
-#ifdef HAVE_UTIMENSAT
-        .utimens     = xmp_utimens,
-#endif
-        .open        = xmp_open,
-        .create      = xmp_create,
-        .read        = xmp_read,
-        .write       = xmp_write,
-        .statfs      = xmp_statfs,
-        .release     = xmp_release,
-        .fsync       = xmp_fsync,
-#ifdef HAVE_POSIX_FALLOCATE
-        .fallocate   = xmp_fallocate,
-#endif
-        .setxattr    = xmp_setxattr,
-        .getxattr    = xmp_getxattr,
-        .listxattr   = xmp_listxattr,
-        .removexattr = xmp_removexattr,
-};
 
 /**
  * Check if the path is valid. If it's a relative path,
@@ -222,14 +105,36 @@ enum {
 #define FUSE_XATTRS_OPT(t, p, v) { t, offsetof(struct xattrs_config, p), v }
 
 static struct fuse_opt xattrs_opts[] = {
-        FUSE_XATTRS_OPT("show_sidecar",    show_sidecar, 1),
+        FUSE_XATTRS_OPT("show_sidecar", show_sidecar, 1),
 
-        FUSE_OPT_KEY("-V",                 KEY_VERSION),
-        FUSE_OPT_KEY("--version",          KEY_VERSION),
-        FUSE_OPT_KEY("-h",                 KEY_HELP),
-        FUSE_OPT_KEY("--help",             KEY_HELP),
+        FUSE_XATTRS_OPT("-V",           show_version, 1),
+        FUSE_XATTRS_OPT("--version",    show_version, 1),
+        FUSE_XATTRS_OPT("-h",           show_help,    1),
+        FUSE_XATTRS_OPT("--help",       show_help,    1),
+        FUSE_XATTRS_OPT("-d",           debug,        1),
+        FUSE_XATTRS_OPT("debug",        debug,        1),
+        FUSE_XATTRS_OPT("-v",           verbose,      1),
+        FUSE_XATTRS_OPT("verbose",      verbose,      1),
+        FUSE_XATTRS_OPT("-f",           foreground,   1),
+        FUSE_XATTRS_OPT("-s",           singlethread, 1),
         FUSE_OPT_END
 };
+
+static void usage(const char * progname) {
+    fprintf(stderr,
+            "usage: %s source_dir mountpoint [options]\n"
+                    "\n"
+                    "general options:\n"
+                    "    -o opt,[opt...]  mount options\n"
+                    "    -h   --help      print help\n"
+                    "    -V   --version   print version\n"
+                    "\n"
+                    "FUSE XATTRS options:\n"
+                    "    -o show_sidecar  don't hide sidecar files\n"
+                    "\n",
+                    "FUSE Options:\n",
+    progname);
+}
 
 static int xattrs_opt_proc(void *data, const char *arg, int key,
                            struct fuse_args *outargs) {
@@ -240,24 +145,34 @@ static int xattrs_opt_proc(void *data, const char *arg, int key,
                 xattrs_config.source_dir = sanitized_source_directory(arg);
                 xattrs_config.source_dir_size = strlen(xattrs_config.source_dir);
                 return 0;
+            } else if(!xattrs_config.mountpoint) {
+                int fd, len;
+                if (sscanf(arg, "/dev/fd/%u%n", &fd, &len) == 1 && len == strlen(arg)) {
+                    /*
+                     * Allow /dev/fd/N unchanged; it can be
+                     * use for pre-mounting a generic fuse
+                     * mountpoint to later be completely
+                     * unprivileged with libfuse >= 3.3.0.
+                     */
+                    xattrs_config.mountpoint = strdup(arg);
+                } else {
+                    xattrs_config.mountpoint = realpath(arg, NULL);
+                }
+                if (!xattrs_config.mountpoint) {
+                    fprintf(stderr, "fuse_xattrs: bad mount point `%s': %s\n",
+                            arg, strerror(errno));
+                    return -1;
+                }
+                return 0;
             }
+            fprintf(stderr, "fuse_xattrs: invalid argument `%s'\n", arg);
+            return -1;
+            
             break;
 
         case KEY_HELP:
-            fprintf(stderr,
-                    "usage: %s source_dir mountpoint [options]\n"
-                            "\n"
-                            "general options:\n"
-                            "    -o opt,[opt...]  mount options\n"
-                            "    -h   --help      print help\n"
-                            "    -V   --version   print version\n"
-                            "\n"
-                            "FUSE XATTRS options:\n"
-                            "    -o show_sidecar  don't hide sidecar files\n"
-                            "\n", outargs->argv[0]);
-
-            fuse_opt_add_arg(outargs, "-ho");
-            fuse_main(outargs->argc, outargs->argv, &xmp_oper, NULL);
+            usage(outargs->argv[0]);
+            fuse_lib_help(outargs);
             exit(1);
 
         case KEY_VERSION:
@@ -265,27 +180,110 @@ static int xattrs_opt_proc(void *data, const char *arg, int key,
             fuse_opt_add_arg(outargs, "--version");
             fuse_main(outargs->argc, outargs->argv, &xmp_oper, NULL);
             exit(0);
+        default:
+            fputs("internal error\n", stderr);
+            abort();
     }
     return 1;
 }
 
+static int fuse_xattrs_start(void) {
+    /* To be used for complex initializations */
+    return 0;
+}
 
 
 int main(int argc, char *argv[]) {
+    int res;
     struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+    struct fuse *fuse;
+    struct fuse_session * se;
+    
+    xattrs_config.show_sidecar = 0;
+    xattrs_config.show_version = 0;
+    xattrs_config.show_help = 0;
+    xattrs_config.singlethread = 0;
+    xattrs_config.foreground = 0;
+    xattrs_config.debug = 0;
+    xattrs_config.verbose = 0;
+    
     if (fuse_opt_parse(&args, &xattrs_config, xattrs_opts, xattrs_opt_proc) == -1) {
         exit(1);
     }
-
+    if (xattrs_config.show_version) {
+            printf("FUSE_XATTRS version %d.%d\n", FUSE_XATTRS_VERSION_MAJOR, FUSE_XATTRS_VERSION_MINOR);
+            printf("FUSE library version %s\n", fuse_pkgversion());
+#if !defined(__CYGWIN__)
+            fuse_lowlevel_version();
+#endif
+            exit(0);
+    }
+    
+    if (xattrs_config.show_help) {
+            usage(args.argv[0]);
+            fuse_lib_help(&args);
+            exit(0);
+    }
     if (!xattrs_config.source_dir) {
         fprintf(stderr, "missing source directory\n");
         fprintf(stderr, "see `%s -h' for usage\n", argv[0]);
         exit(1);
     }
+    if (!xattrs_config.mountpoint) {
+        fprintf(stderr, "missing mountpoint\n");
+        fprintf(stderr, "see `%s -h' for usage\n", argv[0]);
+        exit(1);
+    }
 
     umask(0);
-
-    // disable multi-threading
-    fuse_opt_add_arg(&args, "-s");
-    return fuse_main(args.argc, args.argv, &xmp_oper, NULL);
+    fuse = fuse_new(&args, &xmp_oper, sizeof(struct fuse_operations), NULL);
+    if (fuse == NULL)
+        exit(1);
+    se = fuse_get_session(fuse);
+    res = fuse_set_signal_handlers(se);
+    if (res != 0) {
+        fuse_destroy(fuse);
+        exit(1);
+    }
+    
+    res = fuse_mount(fuse, xattrs_config.mountpoint);
+    if (res != 0) {
+        fuse_destroy(fuse);
+        exit(1);
+    }
+    #if !defined(__CYGWIN__)
+        res = fcntl(fuse_session_fd(se), F_SETFD, FD_CLOEXEC);
+        if (res == -1)
+            perror("WARNING: failed to set FD_CLOEXEC on fuse device");
+    #endif
+    
+    res = fuse_xattrs_start();
+    if (res == -1) {
+        fuse_unmount(fuse);
+        fuse_destroy(fuse);
+        exit(1);
+    }
+    
+    res = fuse_daemonize(xattrs_config.foreground);
+    if (res == -1) {
+        fuse_unmount(fuse);
+        fuse_destroy(fuse);
+        exit(1);
+    }
+    
+    if (xattrs_config.singlethread)
+        res = fuse_loop(fuse);
+    else
+        res = fuse_loop_mt(fuse, 0);
+    
+    if (res!=0)
+        res = 1;
+    
+    fuse_remove_signal_handlers(se);
+    fuse_unmount(fuse);
+    fuse_destroy(fuse);
+    
+    fuse_opt_free_args(&args);
+    
+    return res;
 }

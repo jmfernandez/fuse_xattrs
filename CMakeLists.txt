@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8 FATAL_ERROR)
 project(fuse_xattrs C)
 
 set(FUSE_XATTRS_VERSION_MAJOR 0)
-set(FUSE_XATTRS_VERSION_MINOR 3)
+set(FUSE_XATTRS_VERSION_MINOR 5)
 
 set(BINARY_SIDECAR_EXT \".xattr\")
 
@@ -53,13 +53,21 @@ configure_file (
         "${PROJECT_BINARY_DIR}/fuse_xattrs.1"
 )
 
-
 # set required definitions
 add_definitions (-D_FILE_OFFSET_BITS=64)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/CMakeModules/")
 
 set(CMAKE_C_FLAGS "-O3")
+
+include (FindFUSE3)
+
+if (FUSE3_FOUND)
+    message(STATUS "FUSE3 Includes ${FUSE3_INCLUDE_DIRS}")
+    message(STATUS "FUSE3 Libraries ${FUSE3_LIBRARIES}")
+else()
+    message(FATAL_ERROR "FUSE3 not found")
+endif ()
 
 option(ENABLE_CODECOVERAGE "Enable code coverage testing support" )
 if(ENABLE_CODECOVERAGE)
@@ -81,9 +89,13 @@ set(SOURCE_FILES
 
 add_executable(fuse_xattrs ${SOURCE_FILES})
 
+include_directories(
+        "${FUSE3_INCLUDE_DIRS}"
+)
+
 target_link_libraries (
         fuse_xattrs
-        fuse
+        "${FUSE3_LIBRARIES}"
 )
 
 install (TARGETS fuse_xattrs DESTINATION bin)

@@ -15,12 +15,13 @@
 
 #include <string.h>
 #include <stdio.h>
+#include "xattrs_config.h"
 
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
 #define debug_print(fmt, ...) \
         do { \
-            if (DEBUG) fprintf(stderr, "%s:%d:%s(): " fmt, __FILENAME__, __LINE__, __func__, ##__VA_ARGS__); \
+            if (xattrs_config.debug) fprintf(stderr, "%s:%d:%s(): " fmt, __FILENAME__, __LINE__, __func__, ##__VA_ARGS__); \
         } while (0)
 
 #define error_print(fmt, ...) \
